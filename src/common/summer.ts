@@ -137,7 +137,7 @@ export default class Summer {
     background: BackgroundInterface | undefined
 
     constructor(options: SummerInterface) {
-        this.canvas = document.getElementById("canvas")
+        this.canvas = document.getElementById("canvas") as HTMLCanvasElement
         this.ctx = this.canvas.getContext("2d")
         this.ratio = options.ratio || 1
         this.canvasWidth = options.canvasWidth
@@ -181,7 +181,7 @@ export default class Summer {
         // console.log(info, info.id, info.isGetHeight, info.height)
         // console.log(info.id, info.isGetHeight, info.height)
         const self = this
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             let taskHandler = () => {
                 let taskInfo:TaskInfoInterface = {
                     id: info.id,
@@ -201,7 +201,7 @@ export default class Summer {
                             bot: info.height + (info.y || 0)
                         })
                     },
-                    done(pos: PosInterface) {
+                    done() {
                         this.runWaitLength ++
                         if (this.runWaitLength >= this.waitQueue.length) {
                             resolve({
@@ -211,7 +211,7 @@ export default class Summer {
                     }
                 }
                 taskInfo.tasks = info.tasks
-                taskInfo.tasks.forEach((task:(ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
+                taskInfo.tasks.forEach((task:(ImgInterface | RectInterface | TextInterface | WrapInterface)) => {
                     if (task.dependOn) {
                         let hasDepended = false
                         taskInfo.tasks.forEach((_task:(ImgInterface | RectInterface | TextInterface | WrapInterface)) => {
@@ -279,7 +279,7 @@ export default class Summer {
 
     checkWaitQueue(taskInfo:TaskInfoInterface, prevTask: (ImgInterface | RectInterface | TextInterface | WrapInterface), pos: { bot: number }) {
         let hasDepended = false
-        taskInfo.waitQueue.forEach((task: (ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
+        taskInfo.waitQueue.forEach((task: (ImgInterface | RectInterface | TextInterface | WrapInterface)) => {
             if (task.dependOn && prevTask.id == task.dependOn.id) {
                 hasDepended = true
                 let _task = Object.assign(task, {
@@ -483,7 +483,7 @@ export default class Summer {
     }
 
     drawRect(info: RectInterface):Promise<PosInterface> {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             let {
                 x = 0,
                 y = 0,
@@ -580,7 +580,7 @@ export default class Summer {
     }
 
     drawText(info: TextInterface):Promise<PosInterface> {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             let {
                 x = 0,
                 y = 0,
