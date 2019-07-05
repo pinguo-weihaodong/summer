@@ -4,6 +4,7 @@ interface SummerTextInterface {
     maxUnit?: number
     minSize?: number
     maxSize?: number
+    maxLine?: number
     fontWeight?: string | number
     lastLineLeastNum?: number
 }
@@ -17,6 +18,7 @@ export default class SummerText {
     ctx: CanvasRenderingContext2D
 
     text: string = ''
+    maxLine: number = 0
     maxUnit: number = 20
     minSize: number = 12
     maxSize: number = 18
@@ -32,8 +34,13 @@ export default class SummerText {
         }
         this.text = info.text
         this.maxUnit = info.maxUnit || 1000
+        this.maxLine = info.maxLine || 0
         this.fontWeight = info.fontWeight || 'normal'
         this.lastLineLeastNum = info.lastLineLeastNum || 0
+    }
+
+    getTextWidth(fontSize: number) {
+        return this.getTextUnitWidth(this.text, this.fontWeight) * fontSize
     }
 
     getTextHeight(lineHeight: number) {
@@ -54,6 +61,7 @@ export default class SummerText {
             text,
             fontWeight,
             minSize,
+            maxLine,
             maxUnit,
             maxSize
         } = this
@@ -64,20 +72,25 @@ export default class SummerText {
             wordsList: new Array()
         }
         let wordsUnitWidth = this.getTextUnitWidth(text, fontWeight)
+        let wordsList:any = []
 
         if (wordsUnitWidth<=maxUnit && !/\n/.test(text)) {
             wordsDrawInfo.ratio = (maxUnit/wordsUnitWidth)>(maxSize/minSize)?(maxSize/minSize):(maxUnit/wordsUnitWidth)
             wordsDrawInfo.size = wordsDrawInfo.ratio * minSize
-            wordsDrawInfo.wordsList = [{
+            wordsList = [{
                 text: text
             }]
         } else {
-            let wordsList:any = []
             this.splitWordsByReturn(text).forEach((_text: string) => {
                 wordsList = wordsList.concat(this.reSplitWordsByLine(_text, this.lastLineLeastNum, maxUnit))
             })
-            wordsDrawInfo.wordsList = wordsList
+            wordsList = wordsList
         }
+        if (maxLine > 0 && wordsList.length) {
+            wordsList = wordsList.slice(0, maxLine)
+        }
+        wordsDrawInfo.wordsList = wordsList
+
         return wordsDrawInfo
     }
     reSplitWordsByLine(text: string, lastLineLeastNum: number = 4, maxUnit: number = 20) {

@@ -1,5 +1,17 @@
 import SummerText from './summerText';
-
+interface PosInterface {
+    bot: number
+    // top: number
+    // left: number
+    // right: number
+    // width: number
+    // height: number
+}
+interface BackgroundInterface {
+    color?: string
+    image?: string
+    mode?: 'fill' | 'cover' | 'contain'
+}
 interface DependOnInterface {
     id: string
     direction: 'cross' | 'vertical'
@@ -18,8 +30,8 @@ interface ItemBaseInterface {
 }
 interface RectPathInterface extends ItemBaseInterface {
     width?: number
-    height?: number
     radius?: number
+    height?: number
 }
 interface BoardPathInterface {
     x: number
@@ -28,17 +40,20 @@ interface BoardPathInterface {
     height: number
     radius: number
 }
-interface GroundInterface {
-    radius?: number
-    color?: string
-    border?: BorderInterface
+interface PaddingInterface {
+    left?: number
+    top?: number
+    right?: number
+    bot?: number
 }
 interface SummerInterface {
     canvasId: string
     canvasWidth: number
     canvasHeight: number | 'auto'
-    ground?: GroundInterface
     ratio?: number
+    border?: BorderInterface
+    background?: BackgroundInterface
+    radius?: number
     tasks: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
 }
 interface ImgInfoInterface {
@@ -48,6 +63,7 @@ interface ImgInfoInterface {
 }
 interface ImgInterface extends RectPathInterface {
     type: 'img'
+    height: number
     img: ImgInfoInterface | string
     mode?: 'contain' | 'cover' | 'fill'
     backgroundColor?: string
@@ -57,7 +73,7 @@ interface ImgInterface extends RectPathInterface {
 interface RectInterface extends RectPathInterface {
     type: 'rect'
     border?: BorderInterface
-    backgroundColor: string | CanvasGradient | CanvasPattern
+    background?: BackgroundInterface
     shadow?: BoxShadowInterface
 }
 interface TextInterface extends ItemBaseInterface {
@@ -66,15 +82,24 @@ interface TextInterface extends ItemBaseInterface {
     width?: number
     fontSize?: number
     lineHeight?: number
+    maxLine?: number
     lastLineLeastNum?: number
     color?: string
+    background?: BackgroundInterface
+    radius?: number
+    border?: BorderInterface
+    padding?: PaddingInterface
     fontWeight?: 'normal' | 'lighter' | 'bold' | number
     textAlign?: 'left' | 'center' | 'right' | 'start' | 'end'
 }
 interface WrapInterface extends ItemBaseInterface {
     type: 'wrap'
     width?: number
-    color?: string
+    height?: number | 'auto'
+    background?: BackgroundInterface
+    radius?: number
+    padding?: number
+    border?: BorderInterface
     tasks: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
 }
 interface BoxShadowInterface {
@@ -88,6 +113,17 @@ interface BorderInterface {
     color: string
 }
 
+interface TaskInfoInterface extends ItemBaseInterface {
+    height?: number | 'auto'
+    tasks: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
+    runLength: number
+    runWaitLength: number
+    waitQueue: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
+    runQueue: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
+    done: Function
+    setWrapHeight: Function
+}
+
 export default class Summer {
 
     ratio: number
@@ -96,7 +132,9 @@ export default class Summer {
     canvasHeight: (number | 'auto') = 'auto'
     ctx: CanvasRenderingContext2D
     tasks: (ImgInterface | RectInterface | TextInterface | WrapInterface)[]
-    ground: GroundInterface | undefined
+    border: BorderInterface | undefined
+    radius: number | undefined
+    background: BackgroundInterface | undefined
 
     constructor(options: SummerInterface) {
         this.canvas = document.getElementById("canvas")
@@ -105,115 +143,234 @@ export default class Summer {
         this.canvasWidth = options.canvasWidth
         this.canvas.width = options.canvasWidth * this.ratio
         this.canvasHeight = options.canvasHeight
-        this.ground = options.ground
         this.tasks = options.tasks
+        this.border = options.border
+        this.radius = options.radius
+        this.background = options.background
     }
-
-    runLength: number = 0
-    runQueue: (ImgInterface | RectInterface | TextInterface | WrapInterface)[] = []
-    waitQueue: (ImgInterface | RectInterface | TextInterface | WrapInterface)[] = []
-    endCallback: Function = ()=>{}
 
     draw(callback: Function) {
-        this.endCallback = callback
-
-        this.tasks.forEach((task:(ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
-            if (task.dependOn) {
-                let hasDepended = false
-                this.tasks.forEach((_task:(ImgInterface | RectInterface | TextInterface | WrapInterface)) => {
-                    if (task.dependOn && _task.id == task.dependOn.id) {
-                        hasDepended = true
-                    }
-                })
-                if (hasDepended) {
-                    this.waitQueue.push(task)
-                } else {
-                    throw `元素：${task.id}\n依赖错误：不存在 id 为 ${task.dependOn.id} 的元素`;
-                }
-            } else {
-                this.runQueue.push(task)
-            }
+        this.drawWrap({
+            id: 'canvas',
+            type: 'wrap',
+            height: this.canvasHeight,
+            tasks: this.tasks,
+            border: this.border,
+            radius: this.radius,
+            background: this.background,
+            width: this.canvasWidth
         })
-
-        this.drawGround()
-    }
-
-    drawGround() {
-        if (this.canvasHeight == 'auto') {
-            this.drawRunningQueue()
-        } else {
-            this.startDraw(this.canvasHeight)
-            this.drawRunningQueue()
-        }
-    }
-
-    drawRunningQueue() {
-        const task = this.runQueue[this.runLength]
-        if (task) {
-            this.runTask(task)
-        }
-    }
-
-    checkWaitQueue(waitQueue: any, prevTask: (ImgInterface | RectInterface | TextInterface | WrapInterface), pos: { right: number, bot: number }) {
-        // console.log(prevTask, pos)
-        let hasDepended = false
-        waitQueue.forEach((task: (ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
-            if (task.dependOn && prevTask.id == task.dependOn.id) {
-                hasDepended = true
-                let _task = Object.assign({}, task, {
-                    x: task.dependOn.direction == 'cross' ? (pos.right + task.dependOn.margin) : task.x,
-                    y: task.dependOn.direction == 'vertical' ? (pos.bot + task.dependOn.margin) : task.y,
-                })
-                // console.log(_task)
-                this.runTask(_task, waitQueue)
-            }
-        })
-        if (!hasDepended) {
-            if (this.runQueue.length > this.runLength + 1) {
-                this.runLength ++
-                this.drawRunningQueue()
+        .then((pos: PosInterface) => {
+            // console.log(pos, this.canvasHeight, this.tasks)
+            if (this.canvasHeight == 'auto') {
+                this.canvasHeight = pos.bot
+                this.canvas.height = this.canvasHeight * this.ratio
+                this.canvas.style.width = this.canvasWidth + 'px'
+                this.canvas.style.height = this.canvasHeight + 'px'
+                this.draw(callback)
             } else {
-                // console.log("---, end", this.endCallback)
-                this.endCallback(this.canvas.toDataURL("image/png"), {
+                callback && callback(this.canvas.toDataURL("image/png"), {
                     width: this.canvasWidth,
                     height: this.canvasHeight
                 })
             }
+        })
+    }
+
+    drawWrap(info: WrapInterface):Promise<PosInterface> {
+        // console.log(info, info.id, info.isGetHeight, info.height)
+        // console.log(info.id, info.isGetHeight, info.height)
+        const self = this
+        return new Promise((resolve, reject) => {
+            let taskHandler = () => {
+                let taskInfo:TaskInfoInterface = {
+                    id: info.id,
+                    tasks: [],
+                    x: info.x,
+                    y: info.y,
+                    height: info.height,
+                    runLength: 0,
+                    runWaitLength: 0,
+                    waitQueue: [],
+                    runQueue: [],
+                    setWrapHeight(pos: PosInterface) {
+                        if (!info.height || info.height == 'auto') {
+                            info.height = pos.bot - (info.y || 0)
+                        }
+                        resolve({
+                            bot: info.height + (info.y || 0)
+                        })
+                    },
+                    done(pos: PosInterface) {
+                        this.runWaitLength ++
+                        if (this.runWaitLength >= this.waitQueue.length) {
+                            resolve({
+                                bot: (info.y || 0) + ((info.height != 'auto' ? info.height : 0) || 0)
+                            })
+                        }
+                    }
+                }
+                taskInfo.tasks = info.tasks
+                taskInfo.tasks.forEach((task:(ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
+                    if (task.dependOn) {
+                        let hasDepended = false
+                        taskInfo.tasks.forEach((_task:(ImgInterface | RectInterface | TextInterface | WrapInterface)) => {
+                            if (task.dependOn && _task.id == task.dependOn.id) {
+                                hasDepended = true
+                            }
+                        })
+                        if (hasDepended) {
+                            taskInfo.waitQueue.push(task)
+                        } else {
+                            throw `元素：${task.id}\n依赖错误：不存在 id 为 ${task.dependOn.id} 的元素`;
+                        }
+                    } else {
+                        taskInfo.runQueue.push(task)
+                    }
+                })
+                if (taskInfo.runQueue.length) {
+                    this.runTask(taskInfo, taskInfo.runQueue[taskInfo.runLength])
+                } else {
+                    if (info.height && info.height != 'auto') {
+                        self.drawRect({
+                            id: info.id,
+                            type: 'rect',
+                            radius: info.radius,
+                            border: info.border,
+                            x: info.x,
+                            y: info.y,
+                            width: info.width,
+                            height: info.height,
+                            background: info.background
+                        }).then(() => {
+                            resolve({
+                                bot: (info.y || 0) + ((info.height != 'auto' ? info.height : 0) || 0)
+                            })
+                        })
+                    }
+                }
+            }
+            if (!info.isGetHeight && info.height != 'auto') {
+                this.drawRect({
+                    id: info.id,
+                    type: 'rect',
+                    radius: info.radius,
+                    border: info.border,
+                    x: info.x,
+                    y: info.y,
+                    width: info.width,
+                    height: info.height,
+                    background: info.background
+                })
+                .then(() => {
+                    if (info.id == 'canvas') {
+                        // console.log(1, info.id)
+                    }
+                    taskHandler()
+                })
+            } else {
+                taskHandler()
+                if (info.id == 'canvas') {
+                    // console.log(2, info.id)
+                }
+            }
+        })
+    }
+
+    checkWaitQueue(taskInfo:TaskInfoInterface, prevTask: (ImgInterface | RectInterface | TextInterface | WrapInterface), pos: { bot: number }) {
+        let hasDepended = false
+        taskInfo.waitQueue.forEach((task: (ImgInterface | RectInterface | TextInterface | WrapInterface), index: number) => {
+            if (task.dependOn && prevTask.id == task.dependOn.id) {
+                hasDepended = true
+                let _task = Object.assign(task, {
+                    // x: task.dependOn.direction == 'cross' ? (pos.right + task.dependOn.margin) : task.x,
+                    // y: task.dependOn.direction == 'vertical' ? (pos.bot + task.dependOn.margin) : task.y,
+                    y: task.dependOn.direction ? (pos.bot + task.dependOn.margin) : task.y,
+                })
+                this.runTask(taskInfo, _task)
+            }
+        })
+        if (!hasDepended) {
+            if (taskInfo.runQueue.length > taskInfo.runLength + 1) {
+                taskInfo.runLength ++
+                this.runTask(taskInfo, taskInfo.runQueue[taskInfo.runLength])
+            } else {
+                taskInfo.done && taskInfo.done(pos)
+            }
         }
     }
 
-    runTask(task: (ImgInterface | RectInterface | TextInterface | WrapInterface), waitQueue: any) {
-        let _task = Object.assign({}, task,
-            { isGetHeight: this.canvasHeight == 'auto'})
+    runTask(taskInfo:TaskInfoInterface, currentTask: (ImgInterface | RectInterface | TextInterface | WrapInterface)) {
+
+        let _task = Object.assign(currentTask,
+            {
+                isGetHeight: (taskInfo.height == 'auto' || taskInfo.height == undefined)
+            })
+        
+        if (_task.isGetHeight && !_task.dependOn) {
+            _task = Object.assign(_task,
+                {
+                    x: (taskInfo.x || 0) + (currentTask.x || 0),
+                    y: (taskInfo.y || 0) + (currentTask.y || 0),
+                })
+        }
+
+        let taskIsLast = _task.isGetHeight && (_task.last)
+        let lastTaskMargin = 0
+        if (_task.last) {
+            lastTaskMargin = _task.last.margin
+        }
+        // console.log(_task.id, taskInfo)
+        // console.log(_task.id, _task.isGetHeight, _task.last, (taskInfo.runQueue.length - 1 == taskInfo.runLength))
         switch (_task.type) {
             case 'img':
                 this.drawImg(_task)
-                .then((pos) => {
-                    if (_task.isGetHeight && _task.last) {
-                        this.startDraw(pos.bot + _task.last.margin)
+                .then((img_pos) => {
+                    if (taskIsLast) {
+                        taskInfo.setWrapHeight({
+                            bot: img_pos.bot + lastTaskMargin,
+                        })
                     } else {
-                        this.checkWaitQueue(_task, pos)
+                        this.checkWaitQueue(taskInfo, _task, img_pos)
                     }
                 })
                 return
             case 'text':
-                let text_pos = this.drawText(_task)
-                if (_task.last && _task.isGetHeight) {
-                    this.startDraw(text_pos.bot + _task.last.margin)
-                } else {
-                    this.checkWaitQueue(_task, text_pos)
-                }
+                this.drawText(_task)
+                .then((text_pos) => {
+                    if (taskIsLast) {
+                        // console.log(text_pos, _task.id)
+                        taskInfo.setWrapHeight({
+                            bot: text_pos.bot + lastTaskMargin,
+                        })
+                    } else {
+                        this.checkWaitQueue(taskInfo, _task, text_pos)
+                    }
+                })
                 return
             case 'rect':
-                let rect_pos = this.drawRect(_task)
-                if (_task.last && _task.isGetHeight) {
-                    this.startDraw(rect_pos.bot + _task.last.margin)
-                } else {
-                    this.checkWaitQueue(_task, rect_pos)
-                }
+                this.drawRect(_task)
+                .then((rect_pos) => {
+                    if (taskIsLast) {
+                        taskInfo.setWrapHeight({
+                            bot: rect_pos.bot + lastTaskMargin,
+                        })
+                    } else {
+                        this.checkWaitQueue(taskInfo, _task, rect_pos)
+                    }
+                })
                 return
             case 'wrap':
                 this.drawWrap(_task)
+                .then((wrap_pos) => {
+                    if (taskIsLast) {
+                        taskInfo.setWrapHeight({
+                            bot: wrap_pos.bot + lastTaskMargin,
+                        })
+                    } else {
+                        this.checkWaitQueue(taskInfo, _task, wrap_pos)
+                    }
+                })
                 return
             default:
                 // if (_task.type) {
@@ -224,33 +381,7 @@ export default class Summer {
         }
     }
 
-    startDraw(canvasHeight: number) {
-        this.canvasHeight = canvasHeight
-        this.canvas.height = this.canvasHeight * this.ratio
-        this.canvas.style.width = this.canvasWidth + 'px'
-        this.canvas.style.height = this.canvasHeight + 'px'
-        if (this.ground) {
-            this.drawRect({
-                id: 'ground',
-                type: 'rect',
-                radius: this.ground.radius,
-                border: this.ground.border,
-                x: 0,
-                y: 0,
-                width: this.canvas.width,
-                height: this.canvas.height,
-                backgroundColor: this.ground.color || 'rgba(0,0,0,0)'
-            })
-        }
-        this.runLength = 0
-        this.drawRunningQueue()
-    }
-
-    drawWrap(info: WrapInterface) {
-        console.log('info: ', info)
-    }
-
-    async drawImg(info:ImgInterface) {
+    async drawImg(info:ImgInterface):Promise<PosInterface> {
         let {
             img,
             x = 0,
@@ -259,7 +390,7 @@ export default class Summer {
             height = 0,
             isGetHeight = false,
             radius = 0,
-            mode = 'fill',
+            mode = 'cover',
             backgroundColor,
             border,
             shadow
@@ -279,7 +410,6 @@ export default class Summer {
 
         if (isGetHeight) {
             return {
-                right: x + width,
                 bot: y + height
             }
         }
@@ -310,7 +440,7 @@ export default class Summer {
         let iw, ih, ix, iy,
             // 是否是占满
             ratio = imgInfo.width / imgInfo.height > width / height
-
+        
         if (mode == 'fill') {
             ctx.drawImage(imgInfo.img, x, y, width, height);
         } else if (mode == 'contain') {
@@ -348,118 +478,223 @@ export default class Summer {
         }
 
         return {
-            right: (info.x || 0) + (info.width || 0),
             bot: (info.y || 0) + (info.height || 0)
         }
     }
 
-    drawRect(info: RectInterface) {
-        let {
-            x = 0,
-            y = 0,
-            width = 50,
-            height = 50,
-            radius = 0,
-            isGetHeight = false,
-            border,
-            backgroundColor,
-            shadow
-        } = info
+    drawRect(info: RectInterface):Promise<PosInterface> {
+        return new Promise((resolve, reject) => {
+            let {
+                x = 0,
+                y = 0,
+                width = 50,
+                height = 50,
+                radius = 0,
+                isGetHeight = false,
+                border,
+                background = {
+                    color: ''
+                },
+                shadow
+            } = info
 
-        if (isGetHeight) {
-            return {
-                right: x + width,
-                bot: y + height
+            if (isGetHeight) {
+                resolve({
+                    bot: y + height
+                })
             }
-        }
 
-        let ratio = this.ratio
-            x *= ratio
-            y *= ratio
-            width *= ratio
-            height *= ratio
-            radius *= ratio
+            let ratio = this.ratio
+                x *= ratio
+                y *= ratio
+                width *= ratio
+                height *= ratio
+                radius *= ratio
 
-        const ctx = this.ctx
+            const ctx = this.ctx
 
-        if (shadow) {
-            this.drawBoxShadow(shadow, { x, y, width, height, radius })
-        }
+            if (shadow) {
+                this.drawBoxShadow(shadow, { x, y, width, height, radius })
+            }
+            if (background.image) {
+                let _imgInfo: ImgInterface = {
+                    id: info.id,
+                    type: "img",
+                    img: background.image,
+                    x: info.x,
+                    y: info.y,
+                    radius: info.radius,
+                    width: info.width,
+                    height: (info.height || 0)
+                }
+                this.drawImg(_imgInfo)
+                .then(() => {
+                    if (border) {
+                        this.drawBoxBorder(border, { x, y, width, height, radius })
+                    }
+                    resolve({
+                        bot: (info.y || 0) + (info.height || 0)
+                    })
+                })
+            } else {
+                this.drawBoardPath({ x, y, width, height, radius })
+                if (background.color) {
+                    let backgroundColor = background.color.toString()
+                    const _startIndex = backgroundColor.indexOf('linear(')
+                    if (_startIndex > -1) {
+                        const _endIndex = backgroundColor.indexOf(')')
+                        const _params = backgroundColor.substring(7, _endIndex).split(",")
+                        const mode = _params[0]
+                        const colors = _params.slice(1)
+                        let grd = ctx.createLinearGradient(x, y, x, y + height)
+                        if (mode == 'to right') {
+                            grd = ctx.createLinearGradient(x, y, x + width, y)
+                        } else {
+                        }
+                        colors.forEach((color: string) => {
+                            let _color = new Array()
+                            color.split(" ").forEach((__colorItem) => {
+                                if (__colorItem) {
+                                    _color.push(__colorItem)
+                                }
+                            })
+                            grd.addColorStop(_color[0].replace("%", "") / 100, _color[1])
+                        })
+                
+                        ctx.fillStyle = grd
+                    } else {
+                        ctx.fillStyle = backgroundColor
+                    }
+        
+                    ctx.fill()
+                }
 
-        this.drawBoardPath({ x, y, width, height, radius })
-        if (backgroundColor) {
-            ctx.fillStyle = backgroundColor
-        }
-        ctx.fill();
-
-        if (border) {
-            this.drawBoxBorder(border, { x, y, width, height, radius })
-        }
-        return {
-            right: (info.x || 0) + (info.width || 0),
-            bot: (info.y || 0) + (info.height || 0)
-        }
-    }
-
-    drawText(info: TextInterface) {
-        let {
-            x = 0,
-            y = 0,
-            isGetHeight = false,
-            fontWeight = 'normal',
-            textAlign,
-            color = '#000000',
-            fontSize = 20,
-            lineHeight = 20,
-            lastLineLeastNum = 0,
-            width = 100
-        } = info
-
-        let ratio = this.ratio
-            x *= ratio
-            y *= ratio
-            width *= ratio
-            fontSize *= ratio
-            lineHeight *= ratio
-
-        const ctx = this.ctx
-
-        let summerText = new SummerText({
-            canvasEl: ctx,
-            text: info.text,
-            lastLineLeastNum,
-            maxUnit: Math.floor(width / fontSize),
-            fontWeight,
+                if (border) {
+                    this.drawBoxBorder(border, { x, y, width, height, radius })
+                }
+                resolve({
+                    bot: (info.y || 0) + (info.height || 0)
+                })
+            }
         })
-        if (!isGetHeight) {
-            let offsetX = 0
-            ctx.textAlign = textAlign || 'left'
-            switch (textAlign) {
-                case 'left':
-                    offsetX = 0
-                    break;
-                case 'center':
-                    offsetX = width / 2
-                    break;
-                case 'right':
-                    offsetX = width
-                    break;
-                case 'start':
-                    offsetX = 0
-                    break;
-                case 'end':
-                    offsetX = width
-                    break;
-                default:
-                    offsetX = 0
-                    break;
+    }
+
+    drawText(info: TextInterface):Promise<PosInterface> {
+        return new Promise((resolve, reject) => {
+            let {
+                x = 0,
+                y = 0,
+                padding = {
+                    top: 0,
+                    right: 0,
+                    left: 0,
+                    bot: 0
+                },
+                maxLine = 0,
+                isGetHeight = false,
+                fontWeight = 'normal',
+                background = {
+                    color: ''
+                },
+                textAlign,
+                color = '#000000',
+                fontSize = 20,
+                lineHeight = 20,
+                lastLineLeastNum = 0,
+                width = 0
+            } = info
+
+            let ratio = this.ratio
+                x *= ratio
+                y *= ratio
+                width *= ratio
+                fontSize *= ratio
+                lineHeight *= ratio
+
+            const ctx = this.ctx
+
+            let summerText = new SummerText({
+                canvasEl: ctx,
+                text: info.text,
+                lastLineLeastNum,
+                maxLine,
+                maxUnit: Math.floor(width / fontSize),
+                fontWeight,
+            })
+            let textHeight = (summerText.getTextHeight(lineHeight) / ratio)
+            let textWidth = (width || summerText.getTextWidth(fontSize)) / ratio
+            if (!isGetHeight) {
+                let offsetX = 0
+                ctx.textAlign = textAlign || 'left'
+                switch (textAlign) {
+                    case 'left':
+                        offsetX = 0
+                        break;
+                    case 'center':
+                        offsetX = width / 2
+                        break;
+                    case 'right':
+                        offsetX = width
+                        break;
+                    case 'start':
+                        offsetX = 0
+                        break;
+                    case 'end':
+                        offsetX = width
+                        break;
+                    default:
+                        offsetX = 0
+                        break;
+                }
+                if (background.color) {
+                    let _bgX = textWidth
+                    switch (textAlign) {
+                        case 'left':
+                            _bgX = 0
+                            break;
+                        case 'center':
+                            _bgX = - textWidth / 2
+                            break;
+                        case 'right':
+                            _bgX = - textWidth
+                            break;
+                        case 'start':
+                            _bgX = 0
+                            break;
+                        case 'end':
+                            offsetX = width
+                            break;
+                        default:
+                            _bgX = 0
+                            break;
+                    }
+
+                    this.drawRect({
+                        id: info.id,
+                        type: 'rect',
+                        radius: info.radius,
+                        border: info.border,
+                        x: (info.x || 0) - (padding.left || 0) + _bgX,
+                        y: (info.y || 0) - (padding.top || 0),
+                        width: textWidth + (padding.left || 0) + (padding.right || 0),
+                        height: textHeight + (padding.top || 0) + (padding.bot || 0),
+                        background: background
+                    })
+                    .then(() => {
+                        ctx.restore()
+                        summerText.drawText(x + offsetX, y + fontSize, color, fontSize, lineHeight)
+                        resolve ({
+                            bot: (info.y || 0) + textHeight
+                        })
+                    })
+                } else {
+                    summerText.drawText(x + offsetX, y + fontSize, color, fontSize, lineHeight)
+                }
             }
-            summerText.drawText(x + offsetX, y, color, fontSize, lineHeight)
-        }
-        return {
-            right: (info.x || 0) + (info.width || 0),
-            bot: (info.y || 0) + (summerText.getTextHeight(lineHeight) / ratio)
-        }
+            resolve ({
+                bot: (info.y || 0) + textHeight
+            })
+        })
     }
 
     drawBoxShadow(shadow: BoxShadowInterface, info: BoardPathInterface) {
